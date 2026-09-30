@@ -1,0 +1,96 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Smart Wall Paint Visualizer</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f6f7f9;--c:#fff;--t:#1b2230;--m:#667085;--p:#4f46e5;--pt:#fff;--b:#e2e5ea}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f131a;--c:#181f2a;--t:#e8ecf2;--m:#9aa4b2;--p:#818cf8;--pt:#10132b;--b:#2a3343}}
+:root[data-theme="dark"]{--bg:#0f131a;--c:#181f2a;--t:#e8ecf2;--m:#9aa4b2;--p:#818cf8;--pt:#10132b;--b:#2a3343}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{background:var(--c);border-bottom:1px solid var(--b);padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.brand{font-weight:700;color:var(--p)}
+main{max-width:1000px;margin:0 auto;padding:14px}
+button,input,select{font:inherit;color:var(--t)}
+.btn{border:1px solid var(--b);background:var(--c);border-radius:8px;padding:6px 12px;cursor:pointer}
+.btn.on,.btn.pri{background:var(--p);color:var(--pt);border-color:var(--p)}
+.card{background:var(--c);border:1px solid var(--b);border-radius:12px;padding:12px;margin-bottom:12px}
+input,select{background:var(--bg);border:1px solid var(--b);border-radius:8px;padding:6px 9px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.m{color:var(--m);font-size:13px}
+.sw{width:38px;height:38px;border-radius:8px;border:2px solid var(--b);cursor:pointer;padding:0}
+.sw:hover{border-color:var(--p)}
+canvas{max-width:100%;height:auto;border-radius:10px;border:1px solid var(--b);background:var(--c);touch-action:none;cursor:crosshair}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:420px}
+th,td{padding:6px;text-align:left;border-bottom:1px solid var(--b);font-size:14px}
+.gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.gal img{width:100%;border-radius:8px}
+.login{max-width:360px;margin:60px auto}
+.toast{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--p);color:var(--pt);padding:8px 16px;border-radius:8px;display:none}
+</style></head><body>
+<div id="app"></div><div class="toast" id="toast"></div>
+<script>
+var K="wpv_v1",DB,U=null,tab="Visualizer",img=null,cv,cx,tmp,tx,W=0,H=0,regs=[],pend=null,tool="p",bw=30,alpha=.75,cmp=0,down=false;
+var DEF=[["Ocean Breeze Blue","#5b9bd5","Matte"],["Sage Green","#9caf88","Matte"],["Warm Sand","#e2c9a0","Satin"],["Terracotta","#c8663f","Matte"],["Soft Lavender","#b9a7d6","Matte"],["Sunny Yellow","#f2d16b","Gloss"],["Blush Pink","#f2b5b5","Satin"],["Charcoal","#4a4f57","Matte"],["Mint","#a8dcc6","Satin"],["Coral","#f08a6c","Gloss"],["Ivory","#f3ecdc","Matte"],["Navy","#2b3f6b","Matte"]];
+try{DB=JSON.parse(localStorage.getItem(K))}catch(e){}
+if(!DB)DB={colors:DEF.map(function(c){return{n:c[0],h:c[1],f:c[2]}}),saves:[],uploads:0,users:{}};
+function sv(){try{localStorage.setItem(K,JSON.stringify(DB))}catch(e){toast("Storage full – delete old designs")}}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function toast(m){var t=document.getElementById("toast");t.textContent=m;t.style.display="block";setTimeout(function(){t.style.display="none"},2200)}
+function login(){var n=document.getElementById("nm").value.trim(),r=document.getElementById("rl").value;if(!n){toast("Enter your name");return}
+U={n:n,r:r};DB.users[n]=1;sv();tab="Visualizer";draw()}
+function go(t){tab=t;draw()}
+function load(f){if(!f)return;if(!/^image\/(jpeg|png)$/.test(f.type)){toast("Use a JPG or PNG image");return}
+var fr=new FileReader();fr.onload=function(){var im=new Image();im.onload=function(){img=im;var s=Math.min(1,900/im.width);W=Math.round(im.width*s);H=Math.round(im.height*s);
+regs=[];pend=null;cmp=0;DB.uploads++;sv();draw();toast("Photo loaded – select a wall")};im.src=fr.result};fr.readAsDataURL(f)}
+function pos(e){var r=cv.getBoundingClientRect();return[(e.clientX-r.left)*W/r.width,(e.clientY-r.top)*H/r.height]}
+function pd(e){if(!img)return;var p=pos(e);down=true;
+if(tool=="p"){if(!pend||pend.t!="p")pend={t:"p",pts:[]};pend.pts.push(p)}else{if(!pend||pend.t!="b")pend={t:"b",pts:[],w:bw};pend.pts.push(p)}render()}
+function pm(e){if(down&&tool=="b"&&pend){pend.pts.push(pos(e));render()}}
+function pu(){down=false}
+function shape(c,r,col){c.fillStyle=c.strokeStyle=col;c.beginPath();
+if(r.t=="p"){r.pts.forEach(function(p,i){i?c.lineTo(p[0],p[1]):c.moveTo(p[0],p[1])});c.closePath();c.fill()}
+else{c.lineWidth=r.w;c.lineCap=c.lineJoin="round";r.pts.forEach(function(p,i){i?c.lineTo(p[0],p[1]):c.moveTo(p[0],p[1])});if(r.pts.length==1)c.lineTo(r.pts[0][0]+.1,r.pts[0][1]);c.stroke()}}
+function render(clean){if(!img||!cv)return;cx.clearRect(0,0,W,H);cx.drawImage(img,0,0,W,H);
+regs.forEach(function(r){tx.clearRect(0,0,W,H);shape(tx,r,r.col);cx.save();cx.globalAlpha=r.a;cx.globalCompositeOperation="multiply";cx.drawImage(tmp,0,0);cx.restore()});
+if(cmp>0&&!clean){var w=W*cmp/100;cx.save();cx.beginPath();cx.rect(0,0,w,H);cx.clip();cx.drawImage(img,0,0,W,H);cx.restore();cx.fillStyle="#fff";cx.fillRect(w-1.5,0,3,H)}
+if(pend&&!clean){cx.save();cx.strokeStyle=cx.fillStyle="rgba(79,70,229,.9)";cx.lineWidth=2;
+if(pend.t=="p"){cx.setLineDash([6,4]);cx.beginPath();pend.pts.forEach(function(p,i){i?cx.lineTo(p[0],p[1]):cx.moveTo(p[0],p[1])});cx.stroke();cx.setLineDash([]);pend.pts.forEach(function(p){cx.beginPath();cx.arc(p[0],p[1],4,0,7);cx.fill()})}
+else{cx.globalAlpha=.4;shape(cx,pend,"#4f46e5")}cx.restore()}}
+function paint(h){if(!img){toast("Upload a room photo first");return}
+if(pend&&(pend.t=="b"||pend.pts.length>=3)){pend.col=h;pend.a=alpha;regs.push(pend);pend=null}
+else if(regs.length){regs[regs.length-1].col=h}else{toast("Select a wall area first");return}render()}
+function setA(v){alpha=v/100;if(regs.length&&!pend)regs[regs.length-1].a=alpha;render()}
+function undo(){if(pend&&pend.pts.length){pend.pts.pop();if(!pend.pts.length)pend=null}else regs.pop();render()}
+function clr(){regs=[];pend=null;render()}
+function setTool(t){tool=t;pend=null;draw()}
+function dl(){render(1);var a=document.createElement("a");a.href=cv.toDataURL("image/png");a.download="painted-room.png";a.click();render()}
+function save(){if(!img||!regs.length){toast("Paint something first");return}render(1);var s=Math.min(1,320/W),t=document.createElement("canvas");t.width=W*s;t.height=H*s;t.getContext("2d").drawImage(cv,0,0,t.width,t.height);
+DB.saves.push({id:Date.now(),name:document.getElementById("dn").value.trim()||"Design "+(DB.saves.length+1),u:U.n,d:new Date().toLocaleDateString(),img:t.toDataURL("image/jpeg",.6),cols:regs.map(function(r){return r.col})});sv();render();toast("Design saved")}
+function delS(id){DB.saves=DB.saves.filter(function(s){return s.id!=id});sv();draw()}
+function addC(){var n=document.getElementById("cn").value.trim(),h=document.getElementById("ch").value,f=document.getElementById("cf").value;if(!n){toast("Enter a name");return}DB.colors.push({n:n,h:h,f:f});sv();draw()}
+function delC(i){DB.colors.splice(i,1);sv();draw()}
+function vis(){var s='<div class="card"><div class="row"><input type="file" accept="image/jpeg,image/png" onchange="load(this.files[0])">'+
+'<button class="btn '+(tool=="p"?"on":"")+'" onclick="setTool(\'p\')">Polygon</button><button class="btn '+(tool=="b"?"on":"")+'" onclick="setTool(\'b\')">Brush</button>'+
+(tool=="b"?'<label class="m">Size <input type="range" min="8" max="80" value="'+bw+'" oninput="bw=+this.value"></label>':'<button class="btn" onclick="if(pend&&pend.pts.length>2)toast(\'Pick a colour to fill\')">Finish shape</button>')+
+'<button class="btn" onclick="undo()">Undo</button><button class="btn" onclick="clr()">Clear</button></div>'+
+'<p class="m">Polygon: click the wall corners. Brush: drag over the wall. Then click a colour. Clicking another colour recolours the last area.</p></div>';
+s+='<div class="card"><div class="wrap"><canvas id="c"></canvas></div>'+(img?'<div class="row" style="margin-top:8px"><label class="m">Opacity <input type="range" min="20" max="100" value="'+alpha*100+'" oninput="setA(this.value)"></label><label class="m">Before ↔ After <input type="range" min="0" max="100" value="'+cmp+'" oninput="cmp=+this.value;render()"></label></div>':'<p class="m">Upload a JPG or PNG photo of your own room to begin.</p>')+'</div>';
+s+='<div class="card"><b>Colour palette</b><div class="row" style="margin-top:8px">'+DB.colors.map(function(c){return'<button class="sw" title="'+esc(c.n)+' · '+esc(c.f)+' · '+c.h+'" style="background:'+c.h+'" onclick="paint(\''+c.h+'\')"></button>'}).join("")+
+'<input type="color" value="#5b9bd5" onchange="paint(this.value)" title="Custom colour"></div></div>'+
+'<div class="card row"><input id="dn" placeholder="Design name"><button class="btn pri" onclick="save()">Save design</button><button class="btn" onclick="dl()">Download PNG</button></div>'+
+'<p class="m">Results are a preview only. Actual colour may vary with lighting, screen calibration and wall texture. Use photos you own.</p>';return s}
+function saved(){var l=DB.saves.filter(function(s){return U.r=="Admin"||s.u==U.n});
+return'<h2>Saved designs</h2>'+(l.length?'<div class="gal">'+l.map(function(s){return'<div class="card"><img src="'+s.img+'" alt=""><b>'+esc(s.name)+'</b><div class="m">'+esc(s.u)+' · '+s.d+'</div><div style="margin:4px 0">'+s.cols.map(function(c){return'<span style="display:inline-block;width:14px;height:14px;border-radius:4px;background:'+c+'"></span> '}).join("")+'</div><button class="btn" onclick="delS('+s.id+')">Delete</button></div>'}).join("")+'</div>':'<p class="m">No saved designs yet.</p>')}
+function admin(){return'<h2>Admin panel</h2><div class="row" style="margin-bottom:12px">'+[["Users",Object.keys(DB.users).length],["Photos uploaded",DB.uploads],["Designs saved",DB.saves.length],["Colours",DB.colors.length]].map(function(k){return'<div class="card" style="min-width:140px;margin:0"><div class="m">'+k[0]+'</div><b style="font-size:22px;color:var(--p)">'+k[1]+'</b></div>'}).join("")+'</div>'+
+'<div class="card"><b>Manage colours</b><div class="wrap"><table><tr><th></th><th>Name</th><th>HEX</th><th>Finish</th><th></th></tr>'+DB.colors.map(function(c,i){return'<tr><td><span style="display:inline-block;width:22px;height:22px;border-radius:5px;background:'+c.h+'"></span></td><td>'+esc(c.n)+'</td><td>'+c.h+'</td><td>'+esc(c.f)+'</td><td><button class="btn" onclick="delC('+i+')">Remove</button></td></tr>'}).join("")+'</table></div>'+
+'<div class="row" style="margin-top:8px"><input id="cn" placeholder="Colour name"><input id="ch" type="color" value="#88aa99"><select id="cf"><option>Matte</option><option>Satin</option><option>Gloss</option></select><button class="btn pri" onclick="addC()">Add colour</button></div></div>'}
+function draw(){var a=document.getElementById("app");
+if(!U){a.innerHTML='<div class="login card"><div class="brand">🎨 Smart Wall Paint Visualizer</div><p class="m">Preview paint colours on your own room photo.</p><input id="nm" placeholder="Your name" style="width:100%;margin-bottom:8px"><select id="rl" style="width:100%;margin-bottom:8px"><option>User</option><option>Admin</option></select><button class="btn pri" style="width:100%" onclick="login()">Enter</button><p class="m">Demo build: data stays in this browser.</p></div>';return}
+var tabs=["Visualizer","Saved"].concat(U.r=="Admin"?["Admin"]:[]);
+a.innerHTML='<header><span class="brand">🎨 Wall Paint Visualizer</span><span class="row">'+tabs.map(function(t){return'<button class="btn '+(tab==t?"on":"")+'" onclick="go(\''+t+'\')">'+t+'</button>'}).join("")+'<span class="m">'+esc(U.n)+' ('+U.r+')</span><button class="btn" onclick="U=null;img=null;draw()">Log out</button></span></header><main>'+(tab=="Visualizer"?vis():tab=="Saved"?saved():admin())+'</main>';
+if(tab=="Visualizer"){cv=document.getElementById("c");if(img){cv.width=W;cv.height=H;cx=cv.getContext("2d");tmp=document.createElement("canvas");tmp.width=W;tmp.height=H;tx=tmp.getContext("2d");
+cv.onpointerdown=pd;cv.onpointermove=pm;cv.onpointerup=cv.onpointerleave=pu;render()}else{cv.style.display="none"}}}
+draw();
+</script></body></html>
